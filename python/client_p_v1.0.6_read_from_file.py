@@ -169,8 +169,8 @@ class EnvironmentGUI:
         #self.sceneInfo=client.getSceneInfo()
         (self.minX,self.minY,self.maxX,self.maxY)=self.findMinMax()
         self.listeners=list()
-        self.simLabel = Label(self.frame, text=name)
-        self.simLabel.place(x =self.width-70, y = self.height-30)
+        self.simLabel = Label(self.frame, text=name, font=("Helvetica", 16))
+        self.simLabel.place(x =self.width-100, y = self.height-45)
         self.coordLabel = Label(self.frame, text="()")
         self.timeLabel  = Label(self.frame, text="()")
         self.timeLabel.place(x =self.width-100, y = 0)
@@ -213,7 +213,7 @@ class EnvironmentGUI:
 
     def redrawWalls(self):
         if self.sceneInfo is not None:
-            circle=self.canvas.create_circle(self.width-20,self.height-20, 10, fill=self.colorSim, outline="#DDD", width=0.8, tags=str(self.name))
+            circle=self.canvas.create_circle(self.width-30,self.height-30, 15, fill=self.colorSim, outline="#DDD", width=0.8, tags=str(self.name))
             self.simLabel.configure(text=str(self.name))
             self.canvas.delete("wall")
             for wall in self.sceneInfo['walls']:
