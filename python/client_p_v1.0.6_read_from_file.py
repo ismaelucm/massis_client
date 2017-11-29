@@ -11,6 +11,9 @@ import urllib3
 import time, io
 import argparse
 import textwrap
+import socket
+from enum import Enum
+import base64
 
 from urllib.parse import urlencode # Python 2
 
@@ -18,6 +21,9 @@ from urllib.parse import urlencode # Python 2
 #    from urllib.parse import urlparse
 #except ImportError:
 #     from urlparse import urlparse
+class WriterType(Enum):
+    FILE = 1
+    SOCKET = 2
 
 SIM_ID_COLORS = ["white","green","yellow","red"]
 api = "/massis"
@@ -67,10 +73,23 @@ def lerp(start, end, percent):
 
 class MassisFileClient:
 
-    def __init__(self, file, scene, out):
+    def __init__(self, file, scene, out, ip, port):
         self.file = file
         self.scene = scene
         self.out = out
+        self.ip = ip
+        self.port = port
+        self.has_output = not ( self.out != None and self.out != "" and self.port > 0 and self.ip != None and self.ip != "")
+
+        print("MassisFileClient.Outout configuration: file "+self.out+" port "+str(self.port) + " ip "+self.ip + " has output "+str(self.has_output))
+
+        if self.has_output:
+            if self.out != "":
+                self.writer = Writer(WriterType.FILE,self.out,"",0)
+            else:
+                self.writer = Writer(WriterType.SOCKET,"",self.ip,self.port)
+
+            self.writer.Open()
         # self.http = urllib3.HTTPConnectionPool('http://' + str(self.host) + ":" + str(self.port) + api, maxsize=20)
         #self.http = urllib3.PoolManager(num_pools=20)
 
@@ -96,6 +115,16 @@ class MassisFileClient:
         #url = '/live/'+str(self.simId)+'/changes?'+urlencode([("components", x) for x in components])
         #return self.streamFast(url)
         return self.fileFast();
+
+    def hasOutput(self):
+        return self.has_output
+
+    def write(self, data):
+        self.writer.Write(data)
+
+    def closeWriter(self):
+        if self.has_output:
+            self.writer.close()
 
 
 class ComponentQuery:
@@ -136,10 +165,11 @@ class ComponentQuery:
         for dataList in self.client.queryChanges(self.components):
             if(self.running):
                 for data in dataList:
+                    #sleep(0.1)
                     #print(data)
                     while lastUpdate>0 and lastUpdate < data['timestamp']:
-                        sleep(0.001)
-                        lastUpdate+=0.001
+                        sleep(0.0001)
+                        lastUpdate+=0.0001
                     lastUpdate=data['timestamp']
                     self.updateAgent(data)
             else:
@@ -180,8 +210,7 @@ class EnvironmentGUI:
         self.acumulatedError = 0
         self.iterations = 0
         self.acumulatedPrecision = 0
-        if self.client.out != "":
-            CreateOutput(self.client.out)
+
 
 
     def scale(self):
@@ -339,9 +368,6 @@ class EnvironmentGUI:
     def getMouseCoordsInSimulation(self):
         return self.screenToSimulation(self.mouseX,self.mouseY)
 
-    def getOut(self):
-        return self.client.out
-
     
     def run(self):
         self.query=ComponentQuery(self.client,["position","human"])
@@ -351,6 +377,66 @@ class EnvironmentGUI:
         self.root.bind('<Motion>', self.mouseMotion)
         self.root.mainloop()
         self.query.stop()
+
+    def WriteOutput(self,average, averagePrecision):
+        if self.client.hasOutput() :
+            self.client.write(str(average) + " " + str(averagePrecision))
+        else:
+            print ("Average Error "+str(average) + " Precision " + str(averagePrecision))
+
+    def closeWriter(self):
+        self.client.closeWriter()
+
+
+class WriterFile:
+    def __init__(self,file):
+        self.fileName = file
+
+    def Open(self):
+        self.file = open(self.fileName, 'w+')
+
+    def Write(self,error,precision):
+        self.file.write(str(error)+" "+str(precision)+"\n")
+
+    def Close(self):
+        self.file.close()
+
+
+class WriterSocket:
+    def __init__(self,ip, port):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.ip = ip
+        self.port = port
+
+    def Open(self):
+        self.socket.connect((self.ip, self.port))
+
+    def Write(self,data):
+        data = data + ";"
+        binary = data.encode('utf-8')
+        self.socket.send(binary)
+
+    def Close(self):
+        self.socket.close()
+
+
+class Writer:
+    def __init__(self, writerType, file, ip, port):
+        self.writerType = writerType
+        if self.writerType == WriterType.FILE:
+            self.writer = WriterFile(file)
+        else:
+            self.writer = WriterSocket(ip, port)
+
+    def Open(self):
+        self.writer.Open()
+
+    def Write(self,data):
+        self.writer.Write(data)
+
+    def Close(self):
+        self.writer.Close()
+
 
 #endclass EnvironmentGUI
 
@@ -375,6 +461,8 @@ parser.add_argument('-s', '--scene', help='File describe de Scene', required=Fal
 parser.add_argument('-a', '--api', help='Api for Simulation (Default "/massis")', required=False)
 parser.add_argument('-o', '--out', help='Sensor output results', required=False)
 parser.add_argument('-c', '--color', help='Sim color', required=False)
+parser.add_argument('-i', '--ip', help='Sim color', required=False)
+parser.add_argument('-p', '--port', help='Sim color', required=False)
 parser.add_argument('-name', '--name', help='Sim name', required=False)
 args = parser.parse_args()
 
@@ -395,16 +483,6 @@ def dist(a, b):
     (x1, z1) = a
     (x2, z2) = b
     return math.hypot(x2 - x1, z2 - z1)
-
-
-def CreateOutput(file):
-    createFile = open(file, 'w+')
-    createFile.close()
-
-def WriteOutput(file,error, precision):
-    handler = open(file, "a")
-    handler.write(str(error)+" "+str(precision)+"\n")
-
 
 
 def detectorFn(env):
@@ -448,18 +526,19 @@ def detectorFn(env):
     average = env.acumulatedError/env.iterations
     averagePrecision = env.acumulatedPrecision/env.iterations
 
-    print("Debug inTheSquare "+str(inTheSquare)+" numAgentsDetected "+str(numAgentsDetected) + " error "+ str(error)+ " env.acumulatedError "+str(env.acumulatedError) + " env.iterations "+str(env.iterations)+ " average error "+str(average) + " precision "+str(precision))
-    if env.getOut() != "":
-        WriteOutput(env.getOut(), average, averagePrecision)
-    else:
-        print("Error : "+average)
+    #print("Debug inTheSquare "+str(inTheSquare)+" numAgentsDetected "+str(numAgentsDetected) + " error "+ str(error)+ " env.acumulatedError "+str(env.acumulatedError) + " env.iterations "+str(env.iterations)+ " average error "+str(average) + " precision "+str(precision))
+
+    env.WriteOutput(average, averagePrecision)
 
 
 
-def example(file, scene, out, colorSim, name, sPositions):
-    env = EnvironmentGUI(client=MassisFileClient(file=file, scene=scene, out = out), color = 0, colorSim = colorSim, name = name, sensorPos=sPositions)
+
+def example(file, scene, out, colorSim, name, ip, port, sPositions):
+    env = EnvironmentGUI(client=MassisFileClient(file=file, scene=scene, out = out, ip = ip, port = port), color = 0, colorSim = colorSim, name = name, sensorPos=sPositions)
     env.addTickListener(detectorFn)
     env.run()
+
+    env.closeWriter()
 
 __simId = 0
 __file = ''
@@ -468,6 +547,8 @@ __dist = 'C'
 __out = ""
 __color = ""
 __name = ""
+__ip = ""
+__port = 0
 
 #==============================================================================================================
 # sensorPosMul_A = ((40, 38.7,1.3), (40, 41.3,1.3), (51, 38.7,1.3), (51, 41.3,1.3), (64, 38.7,1.3), (64, 41.3,1.3))
@@ -512,9 +593,16 @@ if args.color is not None:
 if args.name is not None:
     __name = str(args.name)
 
+if args.ip is not None:
+    __ip = str(args.ip)
+
+if args.port is not None:
+    __port = int(args.port)
 
 
 
-example(file=__file, scene=__scene, out = __out, colorSim=__color, name=__name, sPositions=sensorPosMul[__dist])
+
+
+example(file=__file, scene=__scene, out = __out, colorSim=__color, name=__name, ip= __ip, port = __port,  sPositions=sensorPosMul[__dist])
 
 

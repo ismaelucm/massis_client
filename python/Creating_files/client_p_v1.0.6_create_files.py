@@ -117,7 +117,7 @@ class MassisHttpClient:
         return  json.loads(jsonScene)
 
     def queryChanges(self, components):
-        url = '/live/'+str(self.simId)+'/changes?'+urlencode([("components", x) for x in components])
+        url = '/live/'+str(self.simId)+'/changes?'+urlencode([("components", "human") for x in components])
         return self.streamFast(url)
 
 
@@ -356,6 +356,54 @@ class EnvironmentGUI:
 
 #endclass EnvironmentGUI
 
+
+class Download:
+    def __init__(self,simId, host, port, file, scene, time):
+        self.simId = simId
+        self.host = host
+        self.port = port
+        self.file = file
+        self.scene = scene
+        self.time = time
+        self.firstTime = -1
+        self.currentTime = 0
+
+
+    def DownloadSim(self):
+        outputFile = open(self.file, 'w+')
+        outputFile.close()
+        print("Simulation time "+str(self.currentTime) + " de "+str(self.time))
+        while self.currentTime < self.time:
+            url = '/live/'+str(self.simId)+'/changes?'+"components=position"
+            self.streamFast(url)
+
+    def streamFast(self, endpoint):
+        if not(endpoint.startswith('/')):
+            endpoint = '/'+endpoint
+        http = urllib3.PoolManager(num_pools=20)
+        url = 'http://'+self.host+':'+str(self.port)+endpoint
+        print(url)
+        #request = http.request('GET', url,  preload_content=False)
+        #print ("Status "+str(request.status))
+        #print ("-------")
+        #print("+"+request.data.decode('utf-8'))
+        #line = request.data
+        for line in http.request('GET', url, preload_content=False):
+            with io.FileIO(self.file, "a") as file:
+                if line.startswith(b'data: '):
+                    file.write(line)
+                    data = json.loads(line[len(b'data: '):].decode('utf-8'))
+                    #print(data[0]['components'][0]['data'])
+
+                    time = float(data[0]['timestamp'])
+                    if self.firstTime < 0:
+                        self.firstTime = time
+                    self.currentTime = time - self.firstTime
+                    print("Time: "+str(self.currentTime)+"/"+str(self.time) + " timestamp "+str(time))
+                    if self.currentTime > self.time:
+                        return
+
+
 #Parsing arguments
 
 parser = argparse.ArgumentParser(
@@ -372,12 +420,12 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument('-s', '--simid', help='ID for Simulation (Default: 3)', required=False)
-parser.add_argument('-d', '--dist', help='Distribution of sensor on the red simulations (Default: A)', required=False)
-parser.add_argument('-t', '--host', help='host server for Simulation (Default: 147.96.80.41)', required=False)
+parser.add_argument('-c', '--host', help='host server for Simulation (Default: 147.96.80.41)', required=False)
 parser.add_argument('-p', '--port', help='port for Simulation (Default 8080)', required=False)
 parser.add_argument('-a', '--api', help='Api for Simulation (Default "/massis")', required=False)
 parser.add_argument('-e', '--scene', help='Scene file', required=True)
 parser.add_argument('-f', '--file', help='Simulation file', required=True)
+parser.add_argument('-t', '--time', help='Simulation time', required=False)
 args = parser.parse_args()
 
 #end parsing arguments
@@ -428,12 +476,16 @@ def example(simId, host, port, file, scene, sPositions):
     env.run()
 
 
+
+
+
+
 __simId = 0
 __host = 'localhost'
 __port = 80
-__dist = 'C'
 __scene = ""
 __file =  ""
+__time = 0
 
 #==============================================================================================================
 # sensorPosMul_A = ((40, 38.7,1.3), (40, 41.3,1.3), (51, 38.7,1.3), (51, 41.3,1.3), (64, 38.7,1.3), (64, 41.3,1.3))
@@ -462,8 +514,6 @@ if args.host is not None:
 if args.port is not None:
     __port = int(args.port)
 
-if args.dist is not None:
-    __dist = str(args.dist).upper()
 
 if args.api is not None:
     api = str(args.api)
@@ -474,4 +524,9 @@ if args.scene is not None:
 if args.file is not None:
     __file = str(args.file)
 
-example(simId=__simId, host=__host, port=__port, file = __file, scene = __scene, sPositions=sensorPosMul[__dist])
+if args.time is not None:
+    __time = float(args.time)
+
+#example(simId=__simId, host=__host, port=__port, file = __file, scene = __scene, sPositions=sensorPosMul[__dist])
+download = Download(simId=__simId, host=__host, port=__port, file = __file, scene = __scene, time = __time)
+download.DownloadSim()
