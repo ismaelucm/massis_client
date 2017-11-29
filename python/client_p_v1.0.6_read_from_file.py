@@ -71,17 +71,22 @@ def lerp(start, end, percent):
     return add(start, mult(diff, percent))
 
 
-class MassisFileClient:
+class MassisClient:
 
-    def __init__(self, file, scene, out, ip, port):
+    def __init__(self, file, scene, out, ip, port, simId, host, hostPort,api):
         self.file = file
         self.scene = scene
         self.out = out
         self.ip = ip
+        self.simId = simId
+        self.host = host
+        self.hostPort = hostPort
         self.port = port
+        self.api = api
+        self.readFromServer = host != ""
         self.has_output = not ( self.out != None and self.out != "" and self.port > 0 and self.ip != None and self.ip != "")
 
-        print("MassisFileClient.Outout configuration: file "+self.out+" port "+str(self.port) + " ip "+self.ip + " has output "+str(self.has_output))
+        print("MassisClient.Outout configuration: file "+self.out+" port "+str(self.port) + " ip "+self.ip + " has output "+str(self.has_output))
 
         if self.has_output:
             if self.out != "":
@@ -103,6 +108,21 @@ class MassisFileClient:
                 yield json.loads(s_line)
 
 
+    def getSceneInfo(self):
+        url = 'http://'+self.host+':'+str(self.hostPort)+self.api+'/info/scene/'+str(self.simId)
+        jsonScene = get(url, stream=False).text;
+        return  json.loads(jsonScene)
+
+    def streamFast(self, endpoint):
+        if not(endpoint.startswith('/')):
+            endpoint = '/'+endpoint
+        http = urllib3.PoolManager(num_pools=20)
+        url = 'http://'+self.host+':'+str(self.hostPort)+self.api+endpoint
+        #creo la simulacion
+        for line in http.request('GET', url, preload_content=False):
+            if line.startswith(b'data: '):
+                yield json.loads(line[len(b'data: '):].decode('utf-8'))
+
     def getSceneInfoWithFile(self):
         file = open(self.scene, "r")
         s_sceneSim = file.read();
@@ -112,9 +132,12 @@ class MassisFileClient:
             return None
 
     def queryChanges(self, components):
-        #url = '/live/'+str(self.simId)+'/changes?'+urlencode([("components", x) for x in components])
-        #return self.streamFast(url)
-        return self.fileFast();
+
+        if(self.readFromServer):
+            url = '/live/'+str(self.simId)+'/changes?'+urlencode([("components", x) for x in components])
+            return self.streamFast(url)
+        else:
+            return self.fileFast();
 
     def hasOutput(self):
         return self.has_output
@@ -166,7 +189,6 @@ class ComponentQuery:
             if(self.running):
                 for data in dataList:
                     #sleep(0.1)
-                    #print(data)
                     while lastUpdate>0 and lastUpdate < data['timestamp']:
                         sleep(0.0001)
                         lastUpdate+=0.0001
@@ -195,7 +217,10 @@ class EnvironmentGUI:
         self.frame.pack(fill=BOTH, expand=YES)
         self.canvas = ResizingCanvas(self.frame,width=self.width, height=self.height, bg=SIM_ID_COLORS[color%len(SIM_ID_COLORS)], highlightthickness=0)
         self.canvas.pack(fill=BOTH, expand=YES)
-        self.sceneInfo=client.getSceneInfoWithFile()
+        if client.readFromServer:
+            self.sceneInfo=client.getSceneInfo()
+        else:
+            self.sceneInfo=client.getSceneInfoWithFile()
         #self.sceneInfo=client.getSceneInfo()
         (self.minX,self.minY,self.maxX,self.maxY)=self.findMinMax()
         self.listeners=list()
@@ -456,14 +481,15 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument('-d', '--dist', help='Distribution of sensor on the red simulations (Default: A)', required=False)
-parser.add_argument('-f', '--file', help='File from read the Simulation', required=True)
+parser.add_argument('-f', '--file', help='File from read the Simulation', required=False)
 parser.add_argument('-s', '--scene', help='File describe de Scene', required=False)
 parser.add_argument('-a', '--api', help='Api for Simulation (Default "/massis")', required=False)
 parser.add_argument('-o', '--out', help='Sensor output results', required=False)
 parser.add_argument('-c', '--color', help='Sim color', required=False)
 parser.add_argument('-i', '--ip', help='Sim color', required=False)
 parser.add_argument('-p', '--port', help='Sim color', required=False)
-parser.add_argument('-name', '--name', help='Sim name', required=False)
+parser.add_argument('-q', '--net', help='Query Network configuration IP:PORT:SIM', required=False)
+parser.add_argument('-n', '--name', help='Sim name', required=False)
 args = parser.parse_args()
 
 #end parsing arguments
@@ -533,8 +559,8 @@ def detectorFn(env):
 
 
 
-def example(file, scene, out, colorSim, name, ip, port, sPositions):
-    env = EnvironmentGUI(client=MassisFileClient(file=file, scene=scene, out = out, ip = ip, port = port), color = 0, colorSim = colorSim, name = name, sensorPos=sPositions)
+def example(file, scene, out, colorSim, name, ip, port, sim, host, hostPort, sPositions):
+    env = EnvironmentGUI(client=MassisClient(file=file, scene=scene, out = out, ip = ip, port = port, simId=sim, host=host, api = api, hostPort=hostPort), color = 0, colorSim = colorSim, name = name, sensorPos=sPositions)
     env.addTickListener(detectorFn)
     env.run()
 
@@ -549,6 +575,7 @@ __color = ""
 __name = ""
 __ip = ""
 __port = 0
+__network = ""
 
 #==============================================================================================================
 # sensorPosMul_A = ((40, 38.7,1.3), (40, 41.3,1.3), (51, 38.7,1.3), (51, 41.3,1.3), (64, 38.7,1.3), (64, 41.3,1.3))
@@ -600,9 +627,14 @@ if args.port is not None:
     __port = int(args.port)
 
 
+if args.net is not None:
+    __network = str(args.net)
 
+networkConfig = __network.split(':')
+__simId = networkConfig[2]
+__host = networkConfig[0]
+__hostPort = networkConfig[1]
 
-
-example(file=__file, scene=__scene, out = __out, colorSim=__color, name=__name, ip= __ip, port = __port,  sPositions=sensorPosMul[__dist])
+example(file=__file, scene=__scene, out = __out, colorSim=__color, name=__name, ip= __ip, port = __port, sim = __simId, host = __host, hostPort = __hostPort,  sPositions=sensorPosMul[__dist])
 
 
