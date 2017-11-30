@@ -20,7 +20,7 @@ class ReaderType(Enum):
     SOCKET = 2
 
 TCP_IP = '127.0.0.1'
-BUFFER_SIZE = 50
+BUFFER_SIZE = 256
 
 class ServerSocket:
     def __init__(self, ip, port, connections, buffer):
@@ -73,9 +73,11 @@ class Plotting:
         self.xSize = xSize
         self.ySize = ySize
         self.size = size
-        self.y = []
+        self.yVector = []
+        self.xVector = []
         for i in range(size):
-            self.y.append([])
+            self.yVector.append([])
+            self.xVector.append([])
         self.plt = plt
         self.plt.xlabel(CONST_X_LABEL, fontsize=CONST_AXIS_SIZE)
         self.plt.ylabel(CONST_Y_LABEL, fontsize=CONST_AXIS_SIZE)
@@ -85,9 +87,10 @@ class Plotting:
         self.plt.ion()
 
 
-    def DrawPlot(self, i, value, color, label):
-        self.y[i].append(value)
-        self.plt.plot(self.y[i], color=color, label = label, linewidth=CONST_LINE_SIZE)
+    def DrawPlot(self, i, time, value, color, label):
+        self.yVector[i].append(value)
+        self.xVector[i].append(time)
+        self.plt.plot(self.xVector[i],self.yVector[i], color=color, label = label, linewidth=CONST_LINE_SIZE)
         self.plt.show()
 
     def Refresh(self, x, sleep):
@@ -223,7 +226,7 @@ class Program:
             self.reader.Open()
             x = 0
             stop = False
-
+            xTime = 0.0
             while not stop:
 
                 #print("files "+str(self.fileMgr.GetNumFiles()))
@@ -233,15 +236,16 @@ class Program:
                         stop = True
                     else:
                         dataSplit = data.split(" ")
-                        print("Precision "+dataSplit[1])
-                        self.plot.DrawPlot(i,float(dataSplit[1]), self.colors[i] , "Sim "+str(i))
+                        print("Precision "+dataSplit[2])
+                        xTime = float(dataSplit[0])
+                        self.plot.DrawPlot(i,float(dataSplit[0]),float(dataSplit[2]), self.colors[i] , "Sim "+str(i))
 
                 if not stop:
                     if x == 0:
                         self.plot.ShowLeyend()
 
                     self.plot.Refresh(x,self.time)
-                    x += 1
+                    x = xTime
 
             self.reader.Close()
 

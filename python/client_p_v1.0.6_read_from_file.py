@@ -212,6 +212,8 @@ class EnvironmentGUI:
         self.mouseY=0
         self.colorSim = colorSim
         self.name = name
+        self.lastTimestamp = 0
+        self.currenTime = 0
         self.width=850
         self.height=400
         self.frame.pack(fill=BOTH, expand=YES)
@@ -403,11 +405,11 @@ class EnvironmentGUI:
         self.root.mainloop()
         self.query.stop()
 
-    def WriteOutput(self,average, averagePrecision):
+    def WriteOutput(self,time, average, averagePrecision):
         if self.client.hasOutput() :
-            self.client.write(str(average) + " " + str(averagePrecision))
+            self.client.write(str(time) + " " + str(average) + " " + str(averagePrecision))
         else:
-            print ("Average Error "+str(average) + " Precision " + str(averagePrecision))
+            print ("Time"+str(time)+"Average Error "+str(average) + " Precision " + str(averagePrecision))
 
     def closeWriter(self):
         self.client.closeWriter()
@@ -420,8 +422,8 @@ class WriterFile:
     def Open(self):
         self.file = open(self.fileName, 'w+')
 
-    def Write(self,error,precision):
-        self.file.write(str(error)+" "+str(precision)+"\n")
+    def Write(self,data):
+        self.file.write(data+"\n")
 
     def Close(self):
         self.file.close()
@@ -515,9 +517,11 @@ def detectorFn(env):
     agentData = env.getAgents()
     inTheSquare = 0
     numAgentsDetected=0
+    timestamp = 0.0
     #paa cada agente
     for entityId in agentData:
         pos = (agentData[entityId]['position']['x'],agentData[entityId]['position']['z'])
+        timestamp = agentData[entityId]['timestamp']
         env.setAgentColor(entityId, "blue")
         (minX,minY,maxX,maxY) = env.minRect(env.sensorPos)
         if ((pos[0] >= minX and pos[0] <= maxX) and (pos[1] >= minY and pos[1] <= maxY)):
@@ -548,13 +552,18 @@ def detectorFn(env):
     env.acumulatedError += error
     env.iterations += 1
     env.acumulatedPrecision += precision
-
+    if env.lastTimestamp != 0:
+        deltaTime = timestamp-env.lastTimestamp
+    else:
+        deltaTime = 0
+    env.lastTimestamp = timestamp
+    env.currenTime += deltaTime
     average = env.acumulatedError/env.iterations
     averagePrecision = env.acumulatedPrecision/env.iterations
 
     #print("Debug inTheSquare "+str(inTheSquare)+" numAgentsDetected "+str(numAgentsDetected) + " error "+ str(error)+ " env.acumulatedError "+str(env.acumulatedError) + " env.iterations "+str(env.iterations)+ " average error "+str(average) + " precision "+str(precision))
 
-    env.WriteOutput(average, averagePrecision)
+    env.WriteOutput(env.currenTime, average, averagePrecision)
 
 
 
@@ -630,10 +639,15 @@ if args.port is not None:
 if args.net is not None:
     __network = str(args.net)
 
-networkConfig = __network.split(':')
-__simId = networkConfig[2]
-__host = networkConfig[0]
-__hostPort = networkConfig[1]
+if __network != "":
+    networkConfig = __network.split(':')
+    __simId = networkConfig[2]
+    __host = networkConfig[0]
+    __hostPort = networkConfig[1]
+else:
+    __simId = 0
+    __host = ""
+    __hostPort = 0
 
 example(file=__file, scene=__scene, out = __out, colorSim=__color, name=__name, ip= __ip, port = __port, sim = __simId, host = __host, hostPort = __hostPort,  sPositions=sensorPosMul[__dist])
 
