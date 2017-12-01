@@ -76,6 +76,12 @@ class MassisClient:
     def __init__(self, file, scene, out, ip, port, simId, host, hostPort,api):
         self.file = file
         self.scene = scene
+        self.headers = {
+            'oauth': "dWNtMTI1QTg5NjUzMjY5NzQxMTI1",
+            'authorization': "Basic a2s6eXk=",
+            'cache-control': "no-cache",
+            'postman-token': "ce62a417-ffd8-a0bd-e835-82dc065ed2de"
+        }
         self.out = out
         self.ip = ip
         self.simId = simId
@@ -110,7 +116,7 @@ class MassisClient:
 
     def getSceneInfo(self):
         url = 'http://'+self.host+':'+str(self.hostPort)+self.api+'/info/scene/'+str(self.simId)
-        jsonScene = get(url, stream=False).text;
+        jsonScene = get(url, stream=False, headers = self.headers).text;
         return  json.loads(jsonScene)
 
     def streamFast(self, endpoint):
@@ -119,7 +125,7 @@ class MassisClient:
         http = urllib3.PoolManager(num_pools=20)
         url = 'http://'+self.host+':'+str(self.hostPort)+self.api+endpoint
         #creo la simulacion
-        for line in http.request('GET', url, preload_content=False):
+        for line in http.request('GET', url, preload_content=False,headers = self.headers):
             if line.startswith(b'data: '):
                 yield json.loads(line[len(b'data: '):].decode('utf-8'))
 
@@ -304,7 +310,7 @@ class EnvironmentGUI:
         for pos in sensorPos:
             (x,y,z)= self.simulationToScreen(pos[0], 0, pos[1])
             radius = pos[2]
-            d = 0.2
+            d = 0.5
             sensor1 = self.canvas.create_oval(x-d * self.scale(), z-d * self.scale(), x+d * self.scale(), z+d * self.scale(),fill="red")
             sensor2 = self.canvas.create_oval(x-radius * self.scale(), z-radius * self.scale(), x+radius * self.scale(), z+radius * self.scale(), outline="red")
             self.canvas.addtag_below("all", sensor1)
@@ -329,7 +335,7 @@ class EnvironmentGUI:
         (minX,minY,maxX,maxY) = self.minRect(sensorPos)
         (x0,y0,z0)=self.simulationToScreen(minX, 0, minY)
         (x1,y1,z1)=self.simulationToScreen(maxX, 0, maxY)
-        rect=self.canvas.create_rectangle(x0, z0, x1, z1,width=2,outline="orange")
+        rect=self.canvas.create_rectangle(x0-2, z0-2, x1+2, z1+2,width=3,outline="orange")
         self.canvas.addtag_below("all", rect)
         self.canvas.addtag_below("minRect",rect)
         
