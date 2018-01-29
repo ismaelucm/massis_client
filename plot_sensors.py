@@ -50,7 +50,7 @@ class ServerSocket:
         binary = self.sockets[i][0].recv(self.buffer)
         dataStr = binary.decode('utf-8')
         self.data[i] = self.data[i] + str(dataStr)
-        print("buffer ["+self.data[i]+"]")
+        #print("buffer ["+self.data[i]+"]")
 
         strArr = self.data[i][:self.data[i].index(";")]
         self.data[i] = self.data[i][(self.data[i].index(";")+1):]
@@ -236,7 +236,7 @@ class Program:
                         stop = True
                     else:
                         dataSplit = data.split(" ")
-                        print("Precision "+dataSplit[2])
+                        
                         xTime = float(dataSplit[0])
                         self.plot.DrawPlot(i,float(dataSplit[0]),float(dataSplit[2]), self.colors[i] , "Sim "+str(i))
 

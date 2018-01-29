@@ -14,6 +14,8 @@ import textwrap
 import socket
 from enum import Enum
 import base64
+from optparse import OptionParser
+import inspect
 
 from urllib.parse import urlencode # Python 2
 
@@ -90,12 +92,13 @@ class MassisClient:
         self.port = port
         self.api = api
         self.readFromServer = host != ""
-        self.has_output = not ( self.out != None and self.out != "" and self.port > 0 and self.ip != None and self.ip != "")
+        self.has_output = ( self.out != None and self.out != "") or (self.port > 0 and self.ip != None and self.ip != "")
 
         print("MassisClient.Outout configuration: file "+self.out+" port "+str(self.port) + " ip "+self.ip + " has output "+str(self.has_output))
 
         if self.has_output:
             if self.out != "":
+
                 self.writer = Writer(WriterType.FILE,self.out,"",0)
             else:
                 self.writer = Writer(WriterType.SOCKET,"",self.ip,self.port)
@@ -149,7 +152,7 @@ class MassisClient:
         return self.has_output
 
     def write(self, data):
-        self.writer.Write(data)
+        self.writer.Write(data)      
 
     def closeWriter(self):
         if self.has_output:
@@ -208,6 +211,7 @@ class ComponentQuery:
 
 
 class EnvironmentGUI:
+
 
     def __init__(self, client, color, colorSim, name, sensorPos=((37, 37))):
         self.colors=dict()
@@ -275,7 +279,7 @@ class EnvironmentGUI:
 
     def redrawWalls(self):
         if self.sceneInfo is not None:
-            circle=self.canvas.create_circle(self.width-30,self.height-30, 15, fill=self.colorSim, outline="#DDD", width=0.8, tags=str(self.name))
+            circle=self.canvas.create_circle(self.width-15*2,self.height-15*2, 15, fill=self.colorSim, outline="#DDD", width=0.8, tags=str(self.name))
             self.simLabel.configure(text=str(self.name))
             self.canvas.delete("wall")
             for wall in self.sceneInfo['walls']:
@@ -296,9 +300,14 @@ class EnvironmentGUI:
                 d=f['localScale']['z']
                 color="brown"
                 if f['isDoorOrWindow']:
-                    color="green"
-                (x,y,z)= self.simulationToScreen(f['localTranslation']['x'], 0,f['localTranslation']['z'])
-                poly=self.canvas.create_oval(x-d*self.scale(), z-d*self.scale(), x+d*self.scale(), z+d*self.scale(),fill=color)
+                    color="white"
+#Assumes that doors will have as name always the word "door"
+                    if 'door' in f['name'].lower():
+                      (x,y,z)= self.simulationToScreen(f['localTranslation']['x'], 0,f['localTranslation']['z'])
+                      poly=self.canvas.create_oval(x-d*0.5, z-d*self.scale()*0.5, x+d*self.scale()*0.5, z+d*self.scale()*0.5,fill=color, outline="white")
+                else:
+                      (x,y,z)= self.simulationToScreen(f['localTranslation']['x'], 0,f['localTranslation']['z'])
+                      poly=self.canvas.create_oval(x-d*self.scale(), z-d*self.scale(), x+d*self.scale(), z+d*self.scale(),fill=color)
                 self.canvas.addtag_below("all", poly)
                 self.canvas.addtag_below("furniture",poly)
 
@@ -312,6 +321,7 @@ class EnvironmentGUI:
             radius = pos[2]
             d = 0.5
             sensor1 = self.canvas.create_oval(x-d * self.scale(), z-d * self.scale(), x+d * self.scale(), z+d * self.scale(),fill="red")
+            sensor2 = self.canvas.create_oval(x-radius * self.scale(), z-radius * self.scale(), x+radius * self.scale(), z+radius * self.scale(), outline="red")
             sensor2 = self.canvas.create_oval(x-radius * self.scale(), z-radius * self.scale(), x+radius * self.scale(), z+radius * self.scale(), outline="red")
             self.canvas.addtag_below("all", sensor1)
             self.canvas.addtag_below("sensor",sensor1)
@@ -332,10 +342,11 @@ class EnvironmentGUI:
 
     def drawMinRect(self,sensorPos):
         self.canvas.delete("minRect")
-        (minX,minY,maxX,maxY) = self.minRect(sensorPos)
+#        (minX,minY,maxX,maxY) = self.minRect(sensorPos)
+        (minX,minY,maxX,maxY) = (regionMinX,regionMinY,regionMaxX,regionMaxY)
         (x0,y0,z0)=self.simulationToScreen(minX, 0, minY)
         (x1,y1,z1)=self.simulationToScreen(maxX, 0, maxY)
-        rect=self.canvas.create_rectangle(x0-2, z0-2, x1+2, z1+2,width=3,outline="orange")
+        rect=self.canvas.create_rectangle(x0, z0, x1, z1,width=2,outline="orange")
         self.canvas.addtag_below("all", rect)
         self.canvas.addtag_below("minRect",rect)
         
@@ -365,8 +376,8 @@ class EnvironmentGUI:
 
     def redrawLoop(self):
         if self.ticks == 0 :
-            self.redrawFurniture()
             self.redrawWalls()
+            self.redrawFurniture()
             self.redrawSensor(self.sensorPos)
         self.redrawAgents()
         self.redrawCoordLabel()
@@ -430,6 +441,8 @@ class WriterFile:
 
     def Write(self,data):
         self.file.write(data+"\n")
+        self.file.flush()
+	
 
     def Close(self):
         self.file.close()
@@ -524,19 +537,19 @@ def detectorFn(env):
     inTheSquare = 0
     numAgentsDetected=0
     timestamp = 0.0
+    someInside=False
+    detected = False
     #paa cada agente
     for entityId in agentData:
         pos = (agentData[entityId]['position']['x'],agentData[entityId]['position']['z'])
         timestamp = agentData[entityId]['timestamp']
         env.setAgentColor(entityId, "blue")
-        (minX,minY,maxX,maxY) = env.minRect(env.sensorPos)
-        if ((pos[0] >= minX and pos[0] <= maxX) and (pos[1] >= minY and pos[1] <= maxY)):
-            # si entra en el cuadrado
-            #i = 1
-            inTheSquare += 1
-            detected = False
-            for sPos in env.sensorPos:
-                if detected == False:
+#        (minX,minY,maxX,maxY) = env.minRect(env.sensorPos)
+        (minX,minY,maxX,maxY) = (regionMinX,regionMinY,regionMaxX,regionMaxY)
+        if ((pos[0] >= minX and pos[0] <= maxX) and (pos[1] >= minY and pos[1] <= maxY)):                       
+            inTheSquare += 1          
+            someInside = True
+            for sPos in env.sensorPos:               
                     distance = dist(pos, (sPos[0], sPos[1]))
                     if distance < sPos[2]:
                         env.setAgentColor(entityId, "black")
@@ -555,6 +568,11 @@ def detectorFn(env):
     else:
         precision = numAgentsDetected/inTheSquare
 
+    if (detected==someInside):
+        precision=1
+    else:
+        precision=0
+
     env.acumulatedError += error
     env.iterations += 1
     env.acumulatedPrecision += precision
@@ -564,12 +582,12 @@ def detectorFn(env):
         deltaTime = 0
     env.lastTimestamp = timestamp
     env.currenTime += deltaTime
-    average = env.acumulatedError/env.iterations
+    averageError = env.acumulatedError/env.iterations
     averagePrecision = env.acumulatedPrecision/env.iterations
 
     #print("Debug inTheSquare "+str(inTheSquare)+" numAgentsDetected "+str(numAgentsDetected) + " error "+ str(error)+ " env.acumulatedError "+str(env.acumulatedError) + " env.iterations "+str(env.iterations)+ " average error "+str(average) + " precision "+str(precision))
 
-    env.WriteOutput(env.currenTime, average, averagePrecision)
+    env.WriteOutput(env.currenTime, averageError, averagePrecision)
 
 
 
@@ -598,6 +616,11 @@ __network = ""
 # sensorPosMul_C = ((40, 38.7,1.3), (40, 41.3,1.3), (64, 38.7,1.3), (64, 41.3,1.3))
 # sensorPosMul_D = ((40, 38.7,1.3), (40, 41.3,1.3))
 
+regionMinX=38.8
+regionMinY=37.5
+regionMaxX=65.53
+regionMaxY=42.45
+
 sensorPosMul = {
     'A': [[40, 38.7, 1.3], [40, 41.3, 1.3]],
     'B': [[40, 38.7, 1.3], [40, 41.3, 1.3], [51, 38.7, 1.3], [51, 41.3, 1.3]],
@@ -612,7 +635,9 @@ sensorPosMul = {
     'K': [[45, 38.7, 1.3], [45, 41.3, 1.3], [50, 38.7, 1.3], [50, 41.3, 1.3], [55, 38.7, 1.3], [55, 41.3, 1.3], [60, 38.7, 1.3], [60, 41.3, 1.3], [65, 38.7, 1.3], [65, 41.3, 1.3]],
     'L': [[22, 62, 1.3], [22, 67, 1.3], [73, 62, 1.3], [73, 67, 1.3], [93, 62, 1.3], [93, 67, 1.3]],
     'M': [[22, 62, 1.3], [22, 67, 1.3], [28, 62, 1.3], [28, 67, 1.3], [73, 62, 1.3], [73, 67, 1.3], [88, 62, 1.3], [88, 67, 1.3], [93, 62, 1.3], [93, 67, 1.3]],
-    'N': [[22, 62, 1.3], [22, 67, 1.3], [28, 62, 1.3], [28, 67, 1.3], [73, 62, 1.3], [73, 67, 1.3], [88, 62, 1.3], [88, 67, 1.3], [90, 62, 1.3], [90, 67, 1.3], [93, 62, 1.3], [93, 67, 1.3]]
+    'N': [[22, 62, 1.3], [22, 67, 1.3], [28, 62, 1.3], [28, 67, 1.3], [73, 62, 1.3], [73, 67, 1.3], [88, 62, 1.3], [88, 67, 1.3], [90, 62, 1.3], [90, 67, 1.3], [93, 62, 1.3], [93, 67, 1.3]],
+    'O': [[40, 38.7, 1.3], [43.89, 41.3, 1.3], [48.56, 38.7, 1.3], [55.49, 41.3, 1.3], [59.45, 38.7,1.3], [64, 41.3, 1.3]],
+    'P': [[40, 38.7, 1.3], [46.58, 41.3, 1.3], [55.35, 38.7, 1.3], [64, 41.3, 1.3]]
 }
 #==============================================================================================================
 
