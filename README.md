@@ -8,7 +8,7 @@ Available simulations are:
 
 Presence sensor configurations are labeled from A to N. 
 
-To launch a simple client for reading data from ./Sim200/sim200.json with a sensor layout A
+To launch a simple client for reading data from ./Sim200/sim200.json with a sensor layout A and printing out in the standard output the effectiveness of the sensors
 
 	python3.5 client_p_v1.0.6_read_from_file.py -s scene.json -f ./sims/sim200.json -d A  -n sim0
 
@@ -16,7 +16,7 @@ To launch the same simulation while storing results in file "test.txt"
 
 	python3.5 client_p_v1.0.6_read_from_file.py -s scene.json -f ./sims/sim200.json -d A  -n sim0 -o test.txt
 
-Into another console, type the following to track the changes. The first number is the sim time, the second the accumulated error, the third the average precission (per iteratoin)
+Into another console, type the following to track the changes. The first number is the sim time, the second the accumulated error, the third the average precission (per iteration)
 
 	tail -f test.txt
 
