@@ -110,11 +110,14 @@ class MassisClient:
     def fileFast(self):
         filePath = self.file;
         with open(filePath, "r") as file:
-            for line in file:
-                s_line = line
-                if s_line.startswith("data: "):
-                    s_line = line.replace("data: ","")
-                yield json.loads(s_line)
+            content = file.read()
+            arrayContent = json.loads(content)
+            print("Longitud del array "+str(len(arrayContent)))
+            for element in arrayContent:
+                print("Getting sim time "+str(element['result']['simTime']))
+                yield element
+        print('fileFast finished')
+        return None
 
 
     def getSceneInfo(self):
@@ -146,6 +149,7 @@ class MassisClient:
             url = '/live/'+str(self.simId)+'/changes?'+urlencode([("components", x) for x in components])
             return self.streamFast(url)
         else:
+            print('queryChanges')
             return self.fileFast();
 
     def hasOutput(self):
@@ -176,33 +180,35 @@ class ComponentQuery:
     def agentData(self):
         return dict(self._agentData)
 
-    def updateAgent(self, data):
+    def updateAgent(self, data,time):
         #print(data)
-        entityId = data['entityId']
-        if data['changeType'] == 'REMOVED':
-                del  self._agentData[entityId]
-                return
+        entityId = data['id']
+        #if data['changeType'] == 'REMOVED':
+        #        del  self._agentData[entityId]
+        #        return
         cmps = None
         if not (entityId in self._agentData):
             cmps = dict()
         else:
             cmps = self._agentData[entityId]
-        for cmp in data['components']:
-            cmps[cmp['type']] = cmp['data']
-        cmps['timestamp'] = data['timestamp']
+        
+        cmps['simTime'] = time
+        cmps['obj'] = data
         self._agentData[entityId] = cmps
 
     def doQuery(self):
         lastUpdate=-1
         for dataList in self.client.queryChanges(self.components):
             if(self.running):
-                for data in dataList:
-                    #sleep(0.1)
-                    while lastUpdate>0 and lastUpdate < data['timestamp']:
-                        sleep(0.0001)
-                        lastUpdate+=0.0001
-                    lastUpdate=data['timestamp']
-                    self.updateAgent(data)
+                resultData = dataList['result']
+                while lastUpdate>0 and lastUpdate < resultData['simTime']:
+                    sleep(0.0001)
+                    lastUpdate+=0.1
+                lastUpdate=resultData['simTime']
+                agentsArray = resultData['arrayObj']
+                time = resultData['simTime']
+                for agent in agentsArray:
+                    self.updateAgent(agent,time)
             else:
                 break
 
@@ -249,17 +255,25 @@ class EnvironmentGUI:
         self.acumulatedPrecision = 0
 
 
+    def offsetX(self):
+        return self.width*0.15
+
+
+    def offsetZ(self):
+        return self.height*-0.1
+
+
 
     def scale(self):
         scaleX=self.canvas.width/(self.maxX-self.minX)
         scaleY=self.canvas.height/(self.maxY-self.minY)
-        return min(scaleX,scaleY)*0.9
+        return min(scaleX,scaleY)*1.3
 
     def simulationToScreen(self,x,y,z):
-        return ((x-self.minX)*self.scale(),y,(z-self.minY)*self.scale())
+        return ((x-self.minX)*self.scale()+self.offsetX(),y,(z-self.minY)*self.scale()+self.offsetZ())
 
     def screenToSimulation(self,x,z):
-        return (x/self.scale()+self.minX,z/self.scale()+self.minY)
+        return (x/self.scale()+self.minX-self.offsetX(),z/self.scale()+self.minY-self.offsetZ())
 
     def findMinMax(self):
         minX=float('inf')
@@ -267,8 +281,8 @@ class EnvironmentGUI:
         minY=float('inf')
         maxY=float('-inf')
         if self.sceneInfo is not None:
-            for wall in self.sceneInfo['walls']:
-                points=wall['bottomPoints']
+            for wall in self.sceneInfo['result']:
+                points=wall['points']
                 for i,elem in enumerate(points):
                     point=elem
                     maxY=max(point['z'],maxY)
@@ -282,8 +296,8 @@ class EnvironmentGUI:
             circle=self.canvas.create_circle(self.width-15*2,self.height-15*2, 15, fill=self.colorSim, outline="#DDD", width=0.8, tags=str(self.name))
             self.simLabel.configure(text=str(self.name))
             self.canvas.delete("wall")
-            for wall in self.sceneInfo['walls']:
-                points=wall['bottomPoints']
+            for wall in self.sceneInfo['result']:
+                points=wall['points']
                 for i,elem in enumerate(points):
                     c,n = elem,points[(i + 1) % len(points)]
                     (c_x,c_y,c_z)=self.simulationToScreen(c['x'],c['y'],c['z'])
@@ -355,8 +369,9 @@ class EnvironmentGUI:
         agentData = self.getAgents()
         currentTimeStamp=10000
         for entityId in agentData:
-            currentTimeStamp = min(agentData[entityId]['timestamp'],currentTimeStamp)
-            pos=agentData[entityId]['position']
+            currentTimeStamp = min(agentData[entityId]['simTime'],currentTimeStamp)
+            agentObj = agentData[entityId]['obj']
+            pos=agentObj['pos']
             (x,y,z)=self.simulationToScreen(pos['x'],pos['y'],pos['z'])
             detectorPos=(40,20)
             color="blue"
@@ -377,7 +392,7 @@ class EnvironmentGUI:
     def redrawLoop(self):
         if self.ticks == 0 :
             self.redrawWalls()
-            self.redrawFurniture()
+            #self.redrawFurniture()
             self.redrawSensor(self.sensorPos)
         self.redrawAgents()
         self.redrawCoordLabel()
@@ -507,8 +522,8 @@ parser.add_argument('-s', '--scene', help='File describe de Scene', required=Fal
 parser.add_argument('-a', '--api', help='Api for Simulation (Default "/massis")', required=False)
 parser.add_argument('-o', '--out', help='Sensor output results', required=False)
 parser.add_argument('-c', '--color', help='Sim color', required=False)
-parser.add_argument('-i', '--ip', help='Sim color', required=False)
-parser.add_argument('-p', '--port', help='Sim color', required=False)
+parser.add_argument('-i', '--ip', help='Ip', required=False)
+parser.add_argument('-p', '--port', help='Port', required=False)
 parser.add_argument('-q', '--net', help='Query Network configuration IP:PORT:SIM', required=False)
 parser.add_argument('-n', '--name', help='Sim name', required=False)
 args = parser.parse_args()
@@ -541,8 +556,10 @@ def detectorFn(env):
     detected = False
     #paa cada agente
     for entityId in agentData:
-        pos = (agentData[entityId]['position']['x'],agentData[entityId]['position']['z'])
-        timestamp = agentData[entityId]['timestamp']
+        agentObj = agentData[entityId]['obj']
+        timestamp = agentData[entityId]['simTime']
+        pos = (agentObj['pos']['x'],agentObj['pos']['z'])
+        
         env.setAgentColor(entityId, "blue")
 #        (minX,minY,maxX,maxY) = env.minRect(env.sensorPos)
         (minX,minY,maxX,maxY) = (regionMinX,regionMinY,regionMaxX,regionMaxY)
