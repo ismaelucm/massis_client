@@ -16,7 +16,7 @@ from enum import Enum
 import base64
 from optparse import OptionParser
 import inspect
-
+import requests
 from urllib.parse import urlencode # Python 2
 
 #try:
@@ -91,6 +91,9 @@ class MassisClient:
         self.hostPort = hostPort
         self.port = port
         self.api = api
+        self.firstTime = -1
+        self.lastTimestamp = 0
+        self.updateTime = 1000
         self.readFromServer = host != ""
         self.has_output = ( self.out != None and self.out != "") or (self.port > 0 and self.ip != None and self.ip != "")
 
@@ -104,36 +107,45 @@ class MassisClient:
                 self.writer = Writer(WriterType.SOCKET,"",self.ip,self.port)
 
             self.writer.Open()
-        # self.http = urllib3.HTTPConnectionPool('http://' + str(self.host) + ":" + str(self.port) + api, maxsize=20)
-        #self.http = urllib3.PoolManager(num_pools=20)
 
-    def fileFast(self):
+        if(not self.readFromServer):
+            self.readFile()
+
+
+    def readFile(self):
         filePath = self.file;
         with open(filePath, "r") as file:
             content = file.read()
-            arrayContent = json.loads(content)
-            print("Longitud del array "+str(len(arrayContent)))
-            for element in arrayContent:
-                print("Getting sim time "+str(element['result']['simTime']))
-                yield element
-        print('fileFast finished')
-        return None
+            self.arrayContent = json.loads(content)
+            self.currentElement = 0
+
+    def fileFast(self):
+        if (self.currentElement < len(self.arrayContent)):
+            ret = self.arrayContent[self.currentElement]
+            self.currentElement = self.currentElement + 1
+            return ret
+        else:
+            return None
 
 
     def getSceneInfo(self):
-        url = 'http://'+self.host+':'+str(self.hostPort)+self.api+'/info/scene/'+str(self.simId)
-        jsonScene = get(url, stream=False, headers = self.headers).text;
+        url = 'http://'+self.host+':'+str(self.hostPort)+'/api/simulations/'+str(self.simId)+'/environment/rooms/'
+        print("Command "+url)
+        jsonScene = get(url, stream=False).text
         return  json.loads(jsonScene)
 
     def streamFast(self, endpoint):
-        if not(endpoint.startswith('/')):
-            endpoint = '/'+endpoint
-        http = urllib3.PoolManager(num_pools=20)
-        url = 'http://'+self.host+':'+str(self.hostPort)+self.api+endpoint
-        #creo la simulacion
-        for line in http.request('GET', url, preload_content=False,headers = self.headers):
-            if line.startswith(b'data: '):
-                yield json.loads(line[len(b'data: '):].decode('utf-8'))
+        finished = False;
+        url = 'http://'+self.host+':'+str(self.hostPort)+'/api/simulations/'+str(self.simId)+'/human-agent/allHumanInfo/'
+        print("command "+url);
+        http = requests.get(url,stream=True)
+        if http != None:
+            jsonElement = http.json();
+            return jsonElement
+        else :
+            return None
+
+
 
     def getSceneInfoWithFile(self):
         file = open(self.scene, "r")
@@ -173,9 +185,10 @@ class ComponentQuery:
         self.queue = Queue()
 
     def start(self):
-        self.t = threading.Thread(target=self.doQuery)
+        print('starting')
+        #self.t = threading.Thread(target=self.doQuery)
         #self.t.daemon=True
-        self.t.start()
+        #self.t.start()
 
     def agentData(self):
         return dict(self._agentData)
@@ -198,19 +211,21 @@ class ComponentQuery:
 
     def doQuery(self):
         lastUpdate=-1
-        for dataList in self.client.queryChanges(self.components):
-            if(self.running):
-                resultData = dataList['result']
-                while lastUpdate>0 and lastUpdate < resultData['simTime']:
-                    sleep(0.0001)
-                    lastUpdate+=0.1
-                lastUpdate=resultData['simTime']
-                agentsArray = resultData['arrayObj']
-                time = resultData['simTime']
-                for agent in agentsArray:
-                    self.updateAgent(agent,time)
-            else:
-                break
+        print('=====================================');
+        dataList = self.client.queryChanges(self.components)
+
+        if(self.running) and dataList != None:
+            resultData = dataList['result']
+            #while lastUpdate>0 and lastUpdate < resultData['simTime']:
+            #sleep(0.0001)
+            #lastUpdate+=0.1
+            #lastUpdate=resultData['simTime']
+            agentsArray = resultData['arrayObj']
+            time = resultData['simTime']
+            for agent in agentsArray:
+                self.updateAgent(agent,time)
+
+        print('doQuery end');
 
     def stop(self):
          self.running=False
@@ -366,6 +381,7 @@ class EnvironmentGUI:
         
     def redrawAgents(self):
         self.canvas.delete("agent")
+        print('***redrawAgents***')
         agentData = self.getAgents()
         currentTimeStamp=10000
         for entityId in agentData:
@@ -394,6 +410,8 @@ class EnvironmentGUI:
             self.redrawWalls()
             #self.redrawFurniture()
             self.redrawSensor(self.sensorPos)
+
+        self.updateAgent()
         self.redrawAgents()
         self.redrawCoordLabel()
 
@@ -420,6 +438,9 @@ class EnvironmentGUI:
         self.mouseX=x
         self.mouseY=y
 
+    def updateAgent(self):
+        print('updateAgent')
+        self.query.doQuery()
 
     def getMouseCoords(self):
         return (self.mouseX,self.mouseY)
@@ -431,6 +452,7 @@ class EnvironmentGUI:
     def run(self):
         self.query=ComponentQuery(self.client,["position","human"])
         self.query.start()
+        #self.root.after(10, self.updateAgent)
         self.root.after(10, self.redrawLoop)
         self.root.after(10, self.execListeners)
         self.root.bind('<Motion>', self.mouseMotion)

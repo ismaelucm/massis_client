@@ -46,6 +46,7 @@ class Download:
 
     def streamFast(self):
         url = 'http://'+self.host+':'+str(self.port)+'/api/simulations/'+str(self.simId)+'/human-agent/allHumanInfo/'
+        print("command "+url);
         http = requests.get(url)
         if http.status_code == 200:
         	jsonResponse = http.json()
