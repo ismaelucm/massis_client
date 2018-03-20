@@ -1,20 +1,19 @@
 Available simulations are:
 
-- sim200. Daily routine with 200 students
-- sim400. Daily routine with 400 students
-- simEvacuation5Classes. Evacuation of 5 classes of students.
-- simEnter3Doors. Enter all the people at the same time from three different doors. 
-- simEvacuation50. Evacuation of a single class of 50 students
+- evacuation.json. Evacuation of 5 classes of students
+- entranceclass.json. Daily routine with 210 students.
+- entrance_two_waves.json. Daily routine with 420 students entering in two waves of 210 students.
+
 
 Presence sensor configurations are labeled from A to N. 
 
-To launch a simple client for reading data from ./Sim200/sim200.json with a sensor layout A and printing out in the standard output the effectiveness of the sensors
+To launch a simple client for reading data from ./Sim200/evacuation.json with a sensor layout A and printing out in the standard output the effectiveness of the sensors
 
-	python3.5 client_p_v1.0.6_read_from_file.py -s scene.json -f ./sims/sim200.json -d A  -n sim0
+	python3.5 client_p_v1.0.6_read_from_file.py -s scene.json -f ./sims/evacuation.json -d A  -n sim0
 
 To launch the same simulation while storing results in file "test.txt"
 
-	python3.5 client_p_v1.0.6_read_from_file.py -s scene.json -f ./sims/sim200.json -d A  -n sim0 -o test.txt
+	python3.5 client_p_v1.0.6_read_from_file.py -s scene.json -f ./sims/evacuation.json -d A  -n sim0 -o test.txt
 
 Into another console, type the following to track the changes. The first number is the sim time, the second the accumulated error, the third the average precission (per iteration)
 
